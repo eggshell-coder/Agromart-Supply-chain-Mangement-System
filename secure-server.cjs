@@ -26,8 +26,7 @@ const child = spawn(process.execPath, ['server.cjs'], {
 function isAdminRoute(method, pathname) {
   if (method === 'GET') return pathname === '/api/debug' || pathname === '/api/auth/providers'
   if (method === 'DELETE' && pathname.startsWith('/api/')) return true
-  if ((method === 'POST' || method === 'PUT' || method === 'PATCH') &&
-      /^\/api\/(districts|products|warehouses|vehicles)(\/|$)/.test(pathname)) return true
+  if ((method === 'POST' || method === 'PUT' || method === 'PATCH') && /^\/api\/(districts|products|warehouses|vehicles)(\/|$)/.test(pathname)) return true
   if (pathname.startsWith('/api/provenance') || pathname.startsWith('/api/audit')) return true
   return false
 }
@@ -41,7 +40,12 @@ async function authenticate(req) {
   const { data, error } = await authClient.auth.getUser(token)
   if (error || !data?.user) return { ok: false, status: 401, error: 'Invalid or expired session' }
 
-  const { data: profile, error: profileError } = await authClient
+  // Use the caller's JWT for the profile query so profiles RLS evaluates auth.uid().
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } }
+  })
+  const { data: profile, error: profileError } = await userClient
     .from('profiles')
     .select('id, full_name, role')
     .eq('id', data.user.id)
@@ -58,18 +62,20 @@ async function authenticate(req) {
 const gateway = express()
 gateway.disable('x-powered-by')
 
-// Public application pages/assets are forwarded unchanged. API requests are authenticated here.
 gateway.use(async (req, res, next) => {
   if (!req.path.startsWith('/api/')) return next()
-
-  const auth = await authenticate(req)
-  if (!auth.ok) return res.status(auth.status).json({ error: auth.error })
-  if (isAdminRoute(req.method, req.path) && auth.profile.role !== 'admin') {
-    return res.status(403).json({ error: 'Administrator permission required' })
+  try {
+    const auth = await authenticate(req)
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error })
+    if (isAdminRoute(req.method, req.path) && auth.profile.role !== 'admin') {
+      return res.status(403).json({ error: 'Administrator permission required' })
+    }
+    req.agromartAuth = auth
+    next()
+  } catch (err) {
+    console.error('[auth-gateway]', err)
+    res.status(500).json({ error: 'Authentication service unavailable' })
   }
-
-  req.agromartAuth = auth
-  next()
 })
 
 gateway.use((req, res) => {
@@ -80,20 +86,15 @@ gateway.use((req, res) => {
     method: req.method,
     headers: { ...req.headers, host: `127.0.0.1:${INTERNAL_PORT}` }
   }
-
   const proxyReq = http.request(options, proxyRes => {
     res.statusCode = proxyRes.statusCode || 502
-    for (const [key, value] of Object.entries(proxyRes.headers)) {
-      if (value !== undefined) res.setHeader(key, value)
-    }
+    for (const [key, value] of Object.entries(proxyRes.headers)) if (value !== undefined) res.setHeader(key, value)
     proxyRes.pipe(res)
   })
-
-  proxyReq.on('error', err => {
+  proxyReq.on('error', () => {
     if (!res.headersSent) res.status(502).json({ error: 'Application server unavailable' })
     else res.end()
   })
-
   req.pipe(proxyReq)
 })
 
@@ -101,11 +102,7 @@ const server = gateway.listen(PUBLIC_PORT, () => {
   console.log(`Secure AgroMart gateway listening on ${PUBLIC_PORT}; application on ${INTERNAL_PORT}`)
 })
 
-function shutdown() {
-  server.close(() => child.kill('SIGTERM'))
-}
+function shutdown() { server.close(() => child.kill('SIGTERM')) }
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
-child.on('exit', code => {
-  if (code && code !== 0) process.exit(code)
-})
+child.on('exit', code => { if (code && code !== 0) process.exit(code) })
