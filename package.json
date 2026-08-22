@@ -7,7 +7,7 @@
     "api": "node secure-server.cjs",
     "start": "node secure-server.cjs",
     "dev:web": "vite",
-    "dev": "node scripts/dev.cjs",
+    "dev": "node scripts/dev-secure.cjs",
     "build": "vite build",
     "preview": "vite preview"
   },
