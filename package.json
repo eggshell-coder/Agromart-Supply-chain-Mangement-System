@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "api": "node server.cjs",
-    "start": "node scripts/dev.cjs",
+    "api": "node secure-server.cjs",
+    "start": "node secure-server.cjs",
     "dev:web": "vite",
     "dev": "node scripts/dev.cjs",
     "build": "vite build",
