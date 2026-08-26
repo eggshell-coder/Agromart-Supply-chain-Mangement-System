@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import Onboarding from './components/Onboarding'
 import Login from './components/Login'
 import Dashboard from './components/Dashboard'
+import AdminConsole from './components/AdminConsole'
 import { createClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://qhkckodhjvnuoablpfwq.supabase.co'
@@ -25,6 +26,7 @@ function installApiAuthInterceptor() {
 
 export default function App() {
   const [screen, setScreen] = useState('loading')
+  const [role, setRole] = useState('user')
   useEffect(() => {
     installApiAuthInterceptor()
     let mounted = true
@@ -34,37 +36,35 @@ export default function App() {
       if (data.session) {
         sessionStorage.setItem('agromart_user', JSON.stringify(data.session.user))
         sessionStorage.setItem('agromart_token', data.session.access_token)
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.session.user.id).maybeSingle()
+        setRole(profile?.role || 'user')
         setScreen('dashboard')
         return
       }
-      sessionStorage.removeItem('agromart_user')
-      sessionStorage.removeItem('agromart_token')
-      const path = window.location.pathname
-      const qs = new URLSearchParams(window.location.search)
+      sessionStorage.removeItem('agromart_user'); sessionStorage.removeItem('agromart_token'); setRole('user')
+      const path = window.location.pathname; const qs = new URLSearchParams(window.location.search)
       if (path === '/login' || qs.has('login')) { setScreen('login'); return }
       setScreen(localStorage.getItem('hasSeenOnboarding') ? 'login' : 'onboarding')
     }
     boot()
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!mounted) return
       if (session) {
-        sessionStorage.setItem('agromart_user', JSON.stringify(session.user))
-        sessionStorage.setItem('agromart_token', session.access_token)
-        setScreen('dashboard')
+        sessionStorage.setItem('agromart_user', JSON.stringify(session.user)); sessionStorage.setItem('agromart_token', session.access_token)
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).maybeSingle()
+        setRole(profile?.role || 'user'); setScreen(profile?.role === 'pending' ? 'login' : 'dashboard')
       } else {
-        sessionStorage.removeItem('agromart_user')
-        sessionStorage.removeItem('agromart_token')
-        setScreen('login')
+        sessionStorage.removeItem('agromart_user'); sessionStorage.removeItem('agromart_token'); setRole('user'); setScreen('login')
       }
     })
     return () => { mounted = false; listener.subscription.unsubscribe() }
   }, [])
   const handleOnboardingComplete = () => { localStorage.setItem('hasSeenOnboarding','true'); window.history.replaceState({},'','/login'); setScreen('login') }
-  const handleLoginSuccess = () => { window.history.replaceState({},'','/'); setScreen('dashboard') }
-  const handleLogout = async () => { await supabase.auth.signOut(); sessionStorage.removeItem('agromart_user'); sessionStorage.removeItem('agromart_token'); sessionStorage.removeItem('agromart_role'); window.history.replaceState({},'','/login'); setScreen('login') }
+  const handleLoginSuccess = async () => { const { data: session } = await supabase.auth.getSession(); if (session?.session) { const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.session.user.id).maybeSingle(); setRole(profile?.role || 'user') }; window.history.replaceState({},'','/'); setScreen('dashboard') }
+  const handleLogout = async () => { await supabase.auth.signOut(); sessionStorage.removeItem('agromart_user'); sessionStorage.removeItem('agromart_token'); sessionStorage.removeItem('agromart_role'); setRole('user'); window.history.replaceState({},'','/login'); setScreen('login') }
   if (screen === 'loading') return null
   if (screen === 'onboarding') return <Onboarding onComplete={handleOnboardingComplete} />
   if (screen === 'login') return <Login onSuccess={handleLoginSuccess} />
-  if (screen === 'dashboard') return <Dashboard onLogout={handleLogout} />
+  if (screen === 'dashboard') return <><Dashboard onLogout={handleLogout} role={role} /><AdminConsole role={role} /></>
   return null
 }
