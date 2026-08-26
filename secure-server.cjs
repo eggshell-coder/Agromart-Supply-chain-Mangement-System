@@ -5,7 +5,8 @@ const express = require('express')
 const { createClient } = require('@supabase/supabase-js')
 const path = require('path')
 
-const PUBLIC_PORT = Number(process.env.PORT || 3000)
+// Railway supplies PORT. The gateway is the only public HTTP server.
+const PUBLIC_PORT = Number(process.env.PORT || 8080)
 const INTERNAL_PORT = Number(process.env.INTERNAL_PORT || 3001)
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://qhkckodhjvnuoablpfwq.supabase.co'
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
@@ -24,7 +25,7 @@ const auditClient = SUPABASE_SERVICE_KEY
   : null
 
 const child = spawn(process.execPath, ['server.cjs'], {
-  env: { ...process.env, PORT: String(INTERNAL_PORT) },
+  env: { ...process.env, PORT: String(INTERNAL_PORT), HOST: '127.0.0.1' },
   stdio: 'inherit'
 })
 
@@ -108,6 +109,11 @@ gateway.disable('x-powered-by')
 gateway.use(express.json({ limit: '1mb' }))
 gateway.use(express.urlencoded({ extended: true }))
 
+// Public health endpoint for Railway and quick browser checks.
+gateway.get('/health', (req, res) => {
+  res.status(200).json({ ok: true, service: 'agromart', status: 'healthy' })
+})
+
 gateway.use(async (req, res, next) => {
   if (!req.path.startsWith('/api/')) return next()
   try {
@@ -165,6 +171,7 @@ gateway.patch('/api/admin/staff/:id', async (req, res) => {
 gateway.use(express.static(path.join(__dirname, 'dist'), { index: false }))
 gateway.use((req, res, next) => {
   if (req.path.startsWith('/api/')) return next()
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next()
   res.sendFile(path.join(__dirname, 'dist', 'index.html'))
 })
 
