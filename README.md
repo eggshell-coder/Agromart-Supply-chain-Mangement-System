@@ -178,7 +178,7 @@ Provenance + audit records
 
 ## Main Data Domains
 
-The backend currently works with business domains including:
+The backend works with business domains including:
 
 - `district`
 - `farmer`
@@ -194,6 +194,17 @@ The backend currently works with business domains including:
 - `audit_price_change`
 - `profiles`
 - `system_audit_log`
+- `product_request` (new: for internal warehouse stock transfers)
+- `shipment_notification` (new: for real-time logistics alerts)
+- `inventory_movement` (new: for tracking product stock audit history)
+
+## New Workflow Features
+
+1. **Nested Multi-Product Orders**: Allows placing an order with multiple items in a single, atomic step. It auto-calculates totals and updates status.
+2. **Logistics Physical Verification**: When shipments arrive, officers input the actual received weight and any transit damage, which auto-adjusts warehouse stock levels and logs spoilage.
+3. **Internal Stock Transfers**: Approvals workflow to request and dispatch stock between warehouses.
+4. **ETA & Overdue Alerts**: Scans active shipments and raises dashboard notifications if they are overdue.
+5. **Stock History Auditing**: Detailed audit trail for every product's stock movements.
 
 The exact schema, constraints, indexes, functions, triggers, and Row Level Security policies are maintained in the connected Supabase project/database migrations.
 
