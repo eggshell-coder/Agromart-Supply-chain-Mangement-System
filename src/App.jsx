@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import Onboarding from './components/Onboarding'
 import Login from './components/Login'
-import Dashboard from './components/Dashboard'
+import DashboardWithOrderWorkflow from './components/DashboardWithOrderWorkflow'
 import AdminConsole from './components/AdminConsole'
 import { createClient } from '@supabase/supabase-js'
 
@@ -65,6 +65,6 @@ export default function App() {
   if (screen === 'loading') return null
   if (screen === 'onboarding') return <Onboarding onComplete={handleOnboardingComplete} />
   if (screen === 'login') return <Login onSuccess={handleLoginSuccess} />
-  if (screen === 'dashboard') return <><Dashboard onLogout={handleLogout} role={role} /><AdminConsole role={role} /></>
+  if (screen === 'dashboard') return <><DashboardWithOrderWorkflow onLogout={handleLogout} role={role} /><AdminConsole role={role} /></>
   return null
 }
