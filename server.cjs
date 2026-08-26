@@ -536,18 +536,22 @@ app.post("/api/shipments", async (req, res) => {
 });
 
 app.patch("/api/shipments/:id/status", async (req, res) => {
-  const { status, actual_arrival, days_in_warehouse } = req.body;
+  const { status, actual_arrival, days_in_warehouse, delivered_quantity, damaged_quantity, notes } = req.body;
 
-  const { data: current } = await supabase
+  const { data: current, error: fetchErr } = await supabase
     .from("shipment")
-    .select("status, warehouse_id, quantity")
+    .select("status, warehouse_id, quantity, product_id, notes")
     .eq("shipment_id", req.params.id)
     .single();
 
-  const update = { status };
+  if (fetchErr || !current) return res.status(404).json({ error: "Shipment not found" });
 
+  const update = { status };
   if (actual_arrival) update.actual_arrival = actual_arrival;
   if (days_in_warehouse) update.days_in_warehouse = days_in_warehouse;
+  if (notes) {
+    update.notes = current.notes ? `${current.notes} | Update Notes: ${notes}` : notes;
+  }
 
   const { data, error } = await supabase
     .from("shipment")
@@ -558,41 +562,143 @@ app.patch("/api/shipments/:id/status", async (req, res) => {
 
   if (error) return send(res, null, error);
 
-  if (current && current.warehouse_id) {
+  // Parse delivery type from notes (defaults to WAREHOUSE)
+  const notesStr = String(current.notes || '');
+  const deliveryTypeMatch = notesStr.match(/delivery_type=([^|]*)/);
+  const deliveryType = deliveryTypeMatch ? deliveryTypeMatch[1].trim() : 'WAREHOUSE';
+
+  // 1. Log notifications based on status
+  let notifType = null;
+  let notifMessage = "";
+  if (status === "DELAYED") {
+    notifType = "DELAYED";
+    notifMessage = `Shipment SH-${req.params.id.slice(0,8)} is delayed. Reason: ${notes || 'Not specified'}`;
+  } else if (status === "DELIVERED") {
+    notifType = "DELIVERED";
+    notifMessage = `Shipment SH-${req.params.id.slice(0,8)} has been delivered successfully.`;
+  } else if (status === "PARTIALLY_DELIVERED") {
+    notifType = "PARTIAL";
+    notifMessage = `Shipment SH-${req.params.id.slice(0,8)} delivered partially. Received: ${delivered_quantity ?? current.quantity}kg.`;
+  } else if (status === "SPOILED") {
+    notifType = "DAMAGED";
+    notifMessage = `Shipment SH-${req.params.id.slice(0,8)} has been marked as spoiled.`;
+  }
+
+  if (notifType) {
+    try {
+      await supabase.from("shipment_notification").insert({
+        shipment_id: req.params.id,
+        type: notifType,
+        message: notifMessage
+      });
+    } catch (nErr) {
+      console.warn("[auto-notification]", nErr.message);
+    }
+  }
+
+  // 2. Handle warehouse inventory updates if WAREHOUSE delivery and transitioning to delivered status
+  if (deliveryType === "WAREHOUSE" && ["DELIVERED", "PARTIALLY_DELIVERED", "DAMAGED", "SPOILED"].includes(status)) {
     const oldStatus = current.status;
-    const qty = Number(current.quantity);
+    const initialQty = Number(current.quantity);
+    
+    // received quantity (defaults to full shipment if not specified)
+    const recQty = Number(delivered_quantity ?? initialQty);
+    const dmgQty = Number(damaged_quantity ?? 0);
+    
+    // usable quantity to add to stock
+    let usableQty = recQty - dmgQty;
+    if (status === "SPOILED") usableQty = 0;
+    usableQty = Math.max(0, usableQty);
+
     const warehouseId = current.warehouse_id;
 
-    const { data: wh } = await supabase
-      .from("warehouse")
-      .select("current_load_kg, capacity_kg")
-      .eq("warehouse_id", warehouseId)
-      .single();
+    if (warehouseId) {
+      const { data: wh } = await supabase
+        .from("warehouse")
+        .select("current_load_kg, capacity_kg")
+        .eq("warehouse_id", warehouseId)
+        .single();
 
-    if (wh) {
-      let newLoad = null;
-
-      if (status === "IN_WAREHOUSE" && oldStatus !== "IN_WAREHOUSE") {
-        newLoad = (wh.current_load_kg || 0) + qty;
-      } else if (["DELIVERED", "PARTIALLY_DELIVERED"].includes(status)) {
+      if (wh) {
+        let newLoad = wh.current_load_kg || 0;
+        
         if (oldStatus === "IN_WAREHOUSE") {
-          newLoad = Math.max(0, (wh.current_load_kg || 0) - qty);
+          // If it was already counted in warehouse load, subtract old qty and add new usable qty
+          newLoad = Math.max(0, newLoad - initialQty + usableQty);
         } else {
-          newLoad = (wh.current_load_kg || 0) + qty;
+          // Otherwise, just add the new usable qty
+          newLoad = newLoad + usableQty;
         }
-      } else if (["SPOILED", "CANCELLED"].includes(status) && oldStatus === "IN_WAREHOUSE") {
-        newLoad = Math.max(0, (wh.current_load_kg || 0) - qty);
-      }
 
-      if (newLoad !== null) {
         const cap = wh.capacity_kg;
-
         await supabase
           .from("warehouse")
           .update({
             current_load_kg: cap ? Math.min(newLoad, cap) : newLoad
           })
           .eq("warehouse_id", warehouseId);
+      }
+    }
+
+    // 3. Update global product stock
+    if (usableQty > 0) {
+      const { data: prod } = await supabase
+        .from("product")
+        .select("stock_quantity")
+        .eq("product_id", current.product_id)
+        .single();
+
+      if (prod) {
+        await supabase
+          .from("product")
+          .update({ stock_quantity: (prod.stock_quantity || 0) + usableQty })
+          .eq("product_id", current.product_id);
+      }
+
+      // Log receipt movement
+      try {
+        await supabase.from("inventory_movement").insert({
+          product_id: current.product_id,
+          warehouse_id: warehouseId || null,
+          quantity: usableQty,
+          movement_type: "RECEIPT",
+          reference_id: req.params.id
+        });
+      } catch (imErr) {
+        console.warn("[inventory-movement]", imErr.message);
+      }
+    }
+
+    // 4. Log damage movement if any
+    if (dmgQty > 0) {
+      try {
+        await supabase.from("inventory_movement").insert({
+          product_id: current.product_id,
+          warehouse_id: warehouseId || null,
+          quantity: -dmgQty,
+          movement_type: "DAMAGE",
+          reference_id: req.params.id
+        });
+      } catch (imErr) {
+        console.warn("[inventory-movement-damage]", imErr.message);
+      }
+    }
+
+    // 5. Automatically create food_spoilage record if there is damage or partial loss
+    const missingQty = initialQty - recQty;
+    if (dmgQty > 0 || missingQty > 0 || status === "SPOILED") {
+      try {
+        await supabase.from("food_spoilage").insert({
+          shipment_id: req.params.id,
+          qty_sent: initialQty,
+          qty_received: status === "SPOILED" ? 0 : Math.max(0, recQty - dmgQty),
+          qty_spoiled: status === "SPOILED" ? initialQty : (dmgQty + missingQty),
+          spoilage_reason: notes || (status === "SPOILED" ? "Full shipment spoiled" : dmgQty > 0 ? "Damaged during transit" : "Partial delivery / missing items"),
+          caused_by_delay: oldStatus === "DELAYED" || status === "DELAYED",
+          caused_by_heat_overload: false
+        });
+      } catch (spErr) {
+        console.warn("[auto-spoilage-log]", spErr.message);
       }
     }
   }
@@ -856,6 +962,56 @@ app.post("/api/orders", async (req, res) => {
     .single();
 
   if (error) return send(res, null, error);
+
+  // If nested items are provided, insert them and update the agreed_total
+  if (b.items && Array.isArray(b.items) && b.items.length > 0) {
+    let calculatedTotal = 0;
+    const insertedItems = [];
+    for (const it of b.items) {
+      const itemInsert = {
+        order_id:              data.order_id,
+        product_id:            it.product_id,
+        farmer_id:             it.farmer_id,
+        quantity:              it.quantity,
+        agreed_price_per_unit: it.agreed_price_per_unit
+      };
+      if (it.source_district_id) itemInsert.source_district_id = it.source_district_id;
+      if (it.shipment_id)        itemInsert.shipment_id        = it.shipment_id;
+
+      const { data: itemData, error: itemError } = await supabase
+        .from("order_item")
+        .insert(itemInsert)
+        .select()
+        .single();
+
+      if (itemError) {
+        return res.status(400).json({ error: `Failed to insert item: ${itemError.message}` });
+      }
+      calculatedTotal += Number(itemData.total_price || (it.quantity * it.agreed_price_per_unit) || 0);
+      insertedItems.push(itemData);
+
+      await logProvenance({ event_type:"ORDER_ITEM_ADDED", severity:"INFO",
+        order_id: data.order_id,
+        description:`Order item added: product ${itemData.product_id} | Farmer ${itemData.farmer_id} | Qty: ${itemData.quantity} | Price: ৳${itemData.agreed_price_per_unit}/unit | Total: ৳${itemData.total_price}` });
+    }
+
+    // Update agreed_total with calculated total
+    const { data: updatedOrder, error: updateError } = await supabase
+      .from("purchase_order")
+      .update({ agreed_total: calculatedTotal })
+      .eq("order_id", data.order_id)
+      .select()
+      .single();
+
+    if (updateError) return send(res, null, updateError);
+
+    await logProvenance({ event_type:"ORDER_CREATED", severity:"INFO",
+      order_id: data.order_id,
+      description:`Order created: ${updatedOrder.order_status} | Notes: ${updatedOrder.notes||'—'} | Total: ৳${calculatedTotal}` });
+
+    return res.status(201).json({ ...updatedOrder, order_item: insertedItems });
+  }
+
   await logProvenance({ event_type:"ORDER_CREATED", severity:"INFO",
     order_id: data.order_id,
     description:`Order created: ${data.order_status} | Notes: ${data.notes||'—'} | Total: ৳${data.agreed_total||0}` });
@@ -1361,6 +1517,186 @@ app.get("/api/dashboard/active-shipments", async (req, res) => {
     console.error("[dashboard/active-shipments]", e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+// ── Overdue Shipment Notification Scanner ──
+async function scanOverdueShipments() {
+  try {
+    const { data: activeShips } = await supabase
+      .from("shipment")
+      .select("shipment_id, estimated_arrival, product:product_id(name)")
+      .in("status", ["PENDING", "IN_TRANSIT", "DELAYED"])
+      .not("estimated_arrival", "is", null);
+
+    const now = new Date();
+    for (const s of (activeShips || [])) {
+      if (new Date(s.estimated_arrival) < now) {
+        const { data: existing } = await supabase
+          .from("shipment_notification")
+          .select("notification_id")
+          .eq("shipment_id", s.shipment_id)
+          .eq("type", "ETA_REACHED")
+          .maybeSingle();
+
+        if (!existing) {
+          await supabase.from("shipment_notification").insert({
+            shipment_id: s.shipment_id,
+            type: "ETA_REACHED",
+            message: `🔔 ETA Reached: Shipment SH-${s.shipment_id.slice(0,8)} containing ${s.product?.name || 'products'} has reached its estimated delivery time but is not yet delivered. Please verify physical delivery.`
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[overdue-scan-err]", err.message);
+  }
+}
+
+// ── Product Requests API ──
+app.get("/api/product-requests", async (req, res) => {
+  const { data, error } = await supabase
+    .from("product_request")
+    .select(`
+      *,
+      product:product_id(name, category, unit),
+      source_warehouse:source_warehouse_id(name),
+      dest_warehouse:dest_warehouse_id(name)
+    `)
+    .order("created_at", { ascending: false });
+  send(res, data, error);
+});
+
+app.post("/api/product-requests", async (req, res) => {
+  const { source_warehouse_id, dest_warehouse_id, product_id, quantity, notes } = req.body;
+  const { data, error } = await supabase
+    .from("product_request")
+    .insert({
+      source_warehouse_id,
+      dest_warehouse_id,
+      product_id,
+      quantity: Number(quantity),
+      notes,
+      status: "PENDING"
+    })
+    .select()
+    .single();
+  if (error) return send(res, null, error);
+  res.status(201).json(data);
+});
+
+app.patch("/api/product-requests/:id/status", async (req, res) => {
+  const { status } = req.body;
+  const { data: current, error: fetchErr } = await supabase
+    .from("product_request")
+    .select("*")
+    .eq("request_id", req.params.id)
+    .single();
+  if (fetchErr || !current) return res.status(404).json({ error: "Product request not found" });
+
+  const { data, error } = await supabase
+    .from("product_request")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("request_id", req.params.id)
+    .select()
+    .single();
+
+  if (error) return send(res, null, error);
+
+  const qty = Number(current.quantity);
+
+  // Handle stock updates
+  if (status === "APPROVED" && current.status !== "APPROVED") {
+    // Deduct stock from the source warehouse
+    const { data: wh } = await supabase
+      .from("warehouse")
+      .select("current_load_kg")
+      .eq("warehouse_id", current.source_warehouse_id)
+      .single();
+    if (wh) {
+      await supabase
+        .from("warehouse")
+        .update({ current_load_kg: Math.max(0, (wh.current_load_kg || 0) - qty) })
+        .eq("warehouse_id", current.source_warehouse_id);
+    }
+    try {
+      await supabase.from("inventory_movement").insert({
+        product_id: current.product_id,
+        warehouse_id: current.source_warehouse_id,
+        quantity: -qty,
+        movement_type: "TRANSFER_OUT",
+        reference_id: req.params.id
+      });
+    } catch (imErr) {
+      console.warn("[transfer-out-log]", imErr.message);
+    }
+  } else if (status === "DELIVERED" && current.status !== "DELIVERED") {
+    // Add stock to the destination warehouse
+    const { data: wh } = await supabase
+      .from("warehouse")
+      .select("current_load_kg, capacity_kg")
+      .eq("warehouse_id", current.dest_warehouse_id)
+      .single();
+    if (wh) {
+      const newLoad = (wh.current_load_kg || 0) + qty;
+      const cap = wh.capacity_kg;
+      await supabase
+        .from("warehouse")
+        .update({ current_load_kg: cap ? Math.min(newLoad, cap) : newLoad })
+        .eq("warehouse_id", current.dest_warehouse_id);
+    }
+    try {
+      await supabase.from("inventory_movement").insert({
+        product_id: current.product_id,
+        warehouse_id: current.dest_warehouse_id,
+        quantity: qty,
+        movement_type: "TRANSFER_IN",
+        reference_id: req.params.id
+      });
+    } catch (imErr) {
+      console.warn("[transfer-in-log]", imErr.message);
+    }
+  }
+  res.json(data);
+});
+
+// ── Notifications API ──
+app.get("/api/notifications", async (req, res) => {
+  await scanOverdueShipments();
+  const { data, error } = await supabase
+    .from("shipment_notification")
+    .select(`
+      *,
+      shipment:shipment_id(
+        product:product_id(name)
+      )
+    `)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  send(res, data, error);
+});
+
+app.post("/api/notifications/:id/read", async (req, res) => {
+  const { data, error } = await supabase
+    .from("shipment_notification")
+    .update({ is_read: true })
+    .eq("notification_id", req.params.id)
+    .select()
+    .single();
+  send(res, data, error);
+});
+
+// ── Product History API ──
+app.get("/api/products/:id/history", async (req, res) => {
+  const { data, error } = await supabase
+    .from("inventory_movement")
+    .select(`
+      *,
+      warehouse:warehouse_id(name)
+    `)
+    .eq("product_id", req.params.id)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  send(res, data, error);
 });
 
 // ── Final Fallback ────────────────────────────────────────────

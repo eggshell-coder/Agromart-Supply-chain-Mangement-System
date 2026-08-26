@@ -511,6 +511,7 @@ function ProductsPage() {
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null)
+  const [historyId, setHistoryId] = useState(null)
   const [form, setForm] = useState({})
   const [catFilter, setCatFilter] = useState('')
   const CATS = ['Vegetable','Fruit','Fish','Meat','Dairy','Grain']
@@ -562,6 +563,7 @@ function ProductsPage() {
               <td className="px-4 py-3"><div className="flex gap-1">
                 <button onClick={()=>openEdit(r)} className="px-2 py-1 text-xs rounded-lg bg-gray-100 hover:bg-gray-200">Edit</button>
                 <button onClick={()=>remove(r.product_id)} className="px-2 py-1 text-xs rounded-lg bg-red-50 text-red-600 hover:bg-red-100">Del</button>
+                <button onClick={()=>setHistoryId(r.product_id)} className="px-2 py-1 text-xs rounded-lg bg-green-50 text-green-700 hover:bg-green-100">History</button>
               </div></td>
             </tr>)}</tbody>
           </table></div>
@@ -585,10 +587,11 @@ function ProductsPage() {
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-3">
-          <button onClick={()=>setModal(null)} className="px-4 py-2 text-sm rounded-xl border border-gray-200">Cancel</button>
-          <button onClick={save} className="px-4 py-2 text-sm rounded-xl bg-green-600 text-white hover:bg-green-700">Save</button>
+          <button onClick={()=>setModal(null)} className="px-4 py-2 text-sm rounded-xl border border-gray-200 font-bold">Cancel</button>
+          <button onClick={save} className="px-4 py-2 text-sm rounded-xl bg-green-600 text-white hover:bg-green-700 font-bold">Save</button>
         </div>
       </Modal>}
+      {historyId && <Modal title="Product Stock Audit History" onClose={()=>setHistoryId(null)}><ProductHistoryView productId={historyId} /></Modal>}
     </div>
   )
 }
@@ -1601,10 +1604,12 @@ const NAV = [
   { key:'shipments',  icon:'🚚', label:'Shipments' },
   { key:'farmers',    icon:'👨‍🌾', label:'Farmers' },
   { key:'products',   icon:'📦', label:'Products' },
+  { key:'notifications', icon:'🔔', label:'Notifications' },
 ]
 const NAV_LOG = [
   { key:'warehouses', icon:'🏭', label:'Warehouses' },
   { key:'vehicles',   icon:'🚛', label:'Vehicles' },
+  { key:'product-requests', icon:'🔄', label:'Transfer Requests' },
 ]
 const NAV_MON = [
   { key:'spoilage',   icon:'⚠️',  label:'Spoilage' },
@@ -1641,6 +1646,8 @@ export default function Dashboard({ onLogout }) {
       case 'weather':    return <WeatherPage/>
       case 'priceaudit': return <PriceAuditPage/>
       case 'provenance': return <ProvenancePage/>
+      case 'product-requests': return <ProductRequestsPage/>
+      case 'notifications':    return <NotificationsPage/>
       default:           return <DashboardOverview/>
     }
   }
