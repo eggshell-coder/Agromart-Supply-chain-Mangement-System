@@ -5,7 +5,6 @@ const express = require('express')
 const { createClient } = require('@supabase/supabase-js')
 const path = require('path')
 
-// Railway supplies PORT. The gateway is the only public HTTP server.
 const PUBLIC_PORT = Number(process.env.PORT || 8080)
 const INTERNAL_PORT = Number(process.env.INTERNAL_PORT || 3001)
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://qhkckodhjvnuoablpfwq.supabase.co'
@@ -43,11 +42,9 @@ function isAdminRoute(method, pathname) {
 async function authenticate(req) {
   const match = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)
   if (!match) return { ok: false, status: 401, error: 'Authentication required' }
-
   const token = match[1]
   const { data, error } = await authClient.auth.getUser(token)
   if (error || !data?.user) return { ok: false, status: 401, error: 'Invalid or expired session' }
-
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: `Bearer ${token}` } }
@@ -57,12 +54,10 @@ async function authenticate(req) {
     .select('id, full_name, role, requested_role, created_at')
     .eq('id', data.user.id)
     .maybeSingle()
-
   if (profileError) return { ok: false, status: 500, error: 'Unable to load user profile' }
   if (!profile) return { ok: false, status: 403, error: 'User profile is missing' }
   if (profile.role === 'pending') return { ok: false, status: 403, error: 'Account is pending administrator approval' }
   if (!['user', 'admin', 'superadmin'].includes(profile.role)) return { ok: false, status: 403, error: 'Account is not authorized' }
-
   return { ok: true, user: data.user, profile, token, userClient }
 }
 
@@ -78,7 +73,6 @@ function sanitizeBody(body) {
 function entityFromPath(pathname) {
   return pathname.split('/').filter(Boolean)[1] || 'unknown'
 }
-
 function entityIdFromPath(pathname) {
   const p = pathname.split('/').filter(Boolean)[2]
   return p && p.length <= 128 ? p : null
@@ -109,7 +103,6 @@ gateway.disable('x-powered-by')
 gateway.use(express.json({ limit: '1mb' }))
 gateway.use(express.urlencoded({ extended: true }))
 
-// Public health endpoint for Railway and quick browser checks.
 gateway.get('/health', (req, res) => {
   res.status(200).json({ ok: true, service: 'agromart', status: 'healthy' })
 })
@@ -167,7 +160,42 @@ gateway.patch('/api/admin/staff/:id', async (req, res) => {
   res.json(data)
 })
 
-// Serve the Vite production build from the same public Railway service.
+// Atomic purchase-order creation. This bypasses the old two-step route so an
+// order can never be left behind without its order items when an item insert fails.
+gateway.post('/api/orders', async (req, res) => {
+  if (!auditClient) return res.status(500).json({ error: 'Server purchase-order database key is not configured' })
+  try {
+    const body = req.body || {}
+    const farmerId = body.farmer_id || body.farmerId
+    const rawItems = Array.isArray(body.items) ? body.items : []
+    if (!farmerId) return res.status(400).json({ error: 'Farmer is required' })
+    if (rawItems.length === 0) return res.status(400).json({ error: 'At least one product is required' })
+
+    const items = rawItems.map(item => ({
+      product_id: item.product_id,
+      farmer_id: farmerId,
+      quantity: Number(item.quantity),
+      agreed_price_per_unit: Number(item.agreed_price_per_unit)
+    }))
+
+    const invalid = items.find(i => !i.product_id || !Number.isFinite(i.quantity) || i.quantity <= 0 || !Number.isFinite(i.agreed_price_per_unit) || i.agreed_price_per_unit <= 0)
+    if (invalid) return res.status(400).json({ error: 'Every product needs a valid quantity and price greater than zero' })
+
+    const { data, error } = await auditClient.rpc('create_purchase_order', {
+      p_farmer_id: farmerId,
+      p_notes: body.notes || null,
+      p_ordered_at: body.ordered_at || new Date().toISOString(),
+      p_items: items
+    })
+    if (error) return res.status(400).json({ error: error.message })
+
+    return res.status(201).json(data)
+  } catch (err) {
+    console.error('[atomic-order-create]', err)
+    return res.status(500).json({ error: 'Unable to create purchase order' })
+  }
+})
+
 gateway.use(express.static(path.join(__dirname, 'dist'), { index: false }))
 gateway.use((req, res, next) => {
   if (req.path.startsWith('/api/')) return next()
@@ -175,7 +203,6 @@ gateway.use((req, res, next) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'))
 })
 
-// Proxy API traffic to the existing application server.
 gateway.use((req, res) => {
   const headers = { ...req.headers, host: `127.0.0.1:${INTERNAL_PORT}` }
   if (req.agromartAuth) {
