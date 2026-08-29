@@ -34,12 +34,15 @@ function OrderCreateModal({ onClose }) {
     Promise.all([api('/api/farmers'), api('/api/products')])
       .then(([f, p]) => {
         if (!mounted) return
-        const activeFarmers = Array.isArray(f) ? f.filter(x => x.is_active && x.farmer_id) : []
-        const activeProducts = Array.isArray(p) ? p.filter(x => x.is_active && x.product_id) : []
-        setFarmers(activeFarmers)
-        setProducts(activeProducts)
-        if (activeFarmers.length) {
-          setForm(current => ({ ...current, farmer_id: String(activeFarmers[0].farmer_id) }))
+        // Farmers/products are valid order entities whenever they have an ID.
+        // Do not silently exclude legacy rows whose is_active field is false,
+        // null, missing, or omitted by the API response.
+        const availableFarmers = Array.isArray(f) ? f.filter(x => x.farmer_id) : []
+        const availableProducts = Array.isArray(p) ? p.filter(x => x.product_id) : []
+        setFarmers(availableFarmers)
+        setProducts(availableProducts)
+        if (availableFarmers.length) {
+          setForm(current => ({ ...current, farmer_id: String(availableFarmers[0].farmer_id) }))
         }
       })
       .catch(e => setError(e.message))
