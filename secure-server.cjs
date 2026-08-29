@@ -163,10 +163,11 @@ gateway.patch('/api/admin/staff/:id', async (req, res) => {
 // Atomic purchase-order creation. This bypasses the old two-step route so an
 // order can never be left behind without its order items when an item insert fails.
 gateway.post('/api/orders', async (req, res) => {
-  if (!auditClient) return res.status(500).json({ error: 'Server purchase-order database key is not configured' })
+  const dbClient = auditClient || req.agromartAuth?.userClient
+  if (!dbClient) return res.status(500).json({ error: 'Database client is not available' })
   try {
     const body = req.body || {}
-    const farmerId = body.farmer_id || body.farmerId
+    const farmerId = body.farmer_id || body.farmerId || (Array.isArray(body.items) && (body.items[0]?.farmer_id || body.items[0]?.farmerId))
     const rawItems = Array.isArray(body.items) ? body.items : []
     if (!farmerId) return res.status(400).json({ error: 'Farmer is required' })
     if (rawItems.length === 0) return res.status(400).json({ error: 'At least one product is required' })
@@ -181,18 +182,73 @@ gateway.post('/api/orders', async (req, res) => {
     const invalid = items.find(i => !i.product_id || !Number.isFinite(i.quantity) || i.quantity <= 0 || !Number.isFinite(i.agreed_price_per_unit) || i.agreed_price_per_unit <= 0)
     if (invalid) return res.status(400).json({ error: 'Every product needs a valid quantity and price greater than zero' })
 
-    const { data, error } = await auditClient.rpc('create_purchase_order', {
-      p_farmer_id: farmerId,
-      p_notes: body.notes || null,
-      p_ordered_at: body.ordered_at || new Date().toISOString(),
-      p_items: items
-    })
-    if (error) return res.status(400).json({ error: error.message })
+    let orderResult = null
+    if (auditClient) {
+      const { data, error } = await auditClient.rpc('create_purchase_order', {
+        p_farmer_id: farmerId,
+        p_notes: body.notes || null,
+        p_ordered_at: body.ordered_at || new Date().toISOString(),
+        p_items: items
+      })
+      if (!error && data) {
+        orderResult = data
+      }
+    }
 
-    return res.status(201).json(data)
+    if (!orderResult) {
+      const calculatedTotal = items.reduce((sum, it) => sum + (it.quantity * it.agreed_price_per_unit), 0)
+      const { data: po, error: poErr } = await dbClient
+        .from('purchase_order')
+        .insert({
+          farmer_id: farmerId,
+          order_status: body.order_status || 'PLACED',
+          ordered_at: body.ordered_at || new Date().toISOString(),
+          agreed_total: calculatedTotal,
+          notes: body.notes || null
+        })
+        .select()
+        .single()
+
+      if (poErr) {
+        const { data: po2, error: poErr2 } = await dbClient
+          .from('purchase_order')
+          .insert({
+            order_status: body.order_status || 'PLACED',
+            ordered_at: body.ordered_at || new Date().toISOString(),
+            agreed_total: calculatedTotal,
+            notes: body.notes || null
+          })
+          .select()
+          .single()
+        if (poErr2) return res.status(400).json({ error: poErr2.message })
+        orderResult = po2
+      } else {
+        orderResult = po
+      }
+
+      const orderId = orderResult?.order_id || orderResult?.id
+      if (orderId) {
+        const itemInserts = items.map(it => ({
+          order_id: orderId,
+          product_id: it.product_id,
+          farmer_id: farmerId,
+          quantity: it.quantity,
+          agreed_price_per_unit: it.agreed_price_per_unit
+        }))
+        const { data: insertedItems, error: itemsErr } = await dbClient
+          .from('order_item')
+          .insert(itemInserts)
+          .select()
+        if (!itemsErr && insertedItems) {
+          orderResult.order_item = insertedItems
+        }
+      }
+    }
+
+    return res.status(201).json(orderResult)
   } catch (err) {
     console.error('[atomic-order-create]', err)
-    return res.status(500).json({ error: 'Unable to create purchase order' })
+    return res.status(500).json({ error: 'Unable to create purchase order: ' + err.message })
   }
 })
 

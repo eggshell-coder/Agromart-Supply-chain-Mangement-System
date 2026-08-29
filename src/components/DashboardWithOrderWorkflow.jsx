@@ -57,12 +57,33 @@ function OrderCreateModal({ onClose }) {
     if (!farmerId) return setError('Farmer is required.')
     if (!form.ordered_at) return setError('Order date is required.')
     if (!form.items.length) return setError('Add at least one product.')
-    if (form.items.some(item => !item.product_id || Number(item.quantity) <= 0 || Number(item.agreed_price_per_unit) <= 0)) return setError('Each product needs a product, quantity greater than 0, and agreed price greater than 0.')
+    if (form.items.some(item => !item.product_id || Number(item.quantity) <= 0 || Number(item.agreed_price_per_unit) <= 0)) {
+      return setError('Each product needs a product, quantity greater than 0, and agreed price greater than 0.')
+    }
     setSaving(true)
     try {
-      await api('/api/orders', { method: 'POST', body: { order_status: 'PLACED', ordered_at: new Date(form.ordered_at).toISOString(), notes: form.notes.trim() || '', items: form.items.map(item => ({ product_id: item.product_id, farmer_id: farmerId, quantity: Number(item.quantity), agreed_price_per_unit: Number(item.agreed_price_per_unit) })) } })
+      await api('/api/orders', {
+        method: 'POST',
+        body: {
+          farmer_id: farmerId,
+          farmerId: farmerId,
+          order_status: 'PLACED',
+          ordered_at: new Date(form.ordered_at).toISOString(),
+          notes: form.notes.trim() || '',
+          items: form.items.map(item => ({
+            product_id: item.product_id,
+            farmer_id: farmerId,
+            quantity: Number(item.quantity),
+            agreed_price_per_unit: Number(item.agreed_price_per_unit)
+          }))
+        }
+      })
       onClose(true)
-    } catch (e) { setError(e.message) } finally { setSaving(false) }
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[300] p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose(false) }}>
