@@ -1330,7 +1330,7 @@ app.get("/api/dashboard/analytics", async (req, res) => {
       { data: thisMonthProfits },
       { data: lastMonthProfits },
     ] = await Promise.all([
-      supabase.from("shipment").select("status, delay_hours, start_time"),
+      supabase.from('shipment').select('status, delay_hours, start_time').limit(1000),
       supabase.from("food_spoilage").select("spoilage_pct, loss_amount, detected_at")
         .order("detected_at", { ascending: false }).limit(300),
       supabase.from("monitoring_sensor").select("is_temp_breach, is_overloaded, recorded_at, shipment_id")

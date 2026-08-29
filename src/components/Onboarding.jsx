@@ -4,21 +4,21 @@ import { AnimatePresence, animate, motion, useMotionValue, useTransform } from '
 const slides = [
   {
     id: 1,
-    image: '/images/weather.png',
+    image: '/images/weather.webp',
     badge: 'Live Forecasts',
     title: 'Real-time Weather for Smarter Farming',
     subtitle: 'Track rain, heat, and field alerts before the weather changes your plans.'
   },
   {
     id: 2,
-    image: '/images/market.png',
+    image: '/images/market.webp',
     badge: 'Trusted Market',
     title: 'Buy & Sell Fresh Produce',
     subtitle: 'Connect with trusted buyers and sellers from one clean marketplace.'
   },
   {
     id: 3,
-    image: '/images/delivery.png',
+    image: '/images/delivery.webp',
     badge: 'Fast Delivery',
     title: 'Fast & Reliable Delivery',
     subtitle: 'Move produce from farm to customer with quick, dependable delivery.'

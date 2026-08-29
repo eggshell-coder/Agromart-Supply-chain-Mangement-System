@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import Onboarding from './components/Onboarding'
 import Login from './components/Login'
-import Dashboard from './components/DashboardWithOrderWorkflow'
-import AdminConsole from './components/AdminConsole'
+const Dashboard = lazy(() => import('./components/DashboardWithOrderWorkflow'))
+const AdminConsole = lazy(() => import('./components/AdminConsole'))
 import { createClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://qhkckodhjvnuoablpfwq.supabase.co'
@@ -65,6 +65,6 @@ export default function App() {
   if (screen === 'loading') return null
   if (screen === 'onboarding') return <Onboarding onComplete={handleOnboardingComplete} />
   if (screen === 'login') return <Login onSuccess={handleLoginSuccess} />
-  if (screen === 'dashboard') return <><Dashboard onLogout={handleLogout} role={role} /><AdminConsole role={role} /></>
+  if (screen === 'dashboard') return <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-gray-500">Loading dashboard…</div>}><Dashboard onLogout={handleLogout} role={role} /><AdminConsole role={role} /></Suspense>
   return null
 }

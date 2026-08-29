@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
+import { ShipmentsPage as WorkflowShipmentsPage, ProductRequestsPage, NotificationsPage } from './WorkflowPages'
 
 // ═══════════════════════════════════════════════════════════════
 // API HELPER
@@ -688,7 +689,7 @@ function OrdersPage() {
       {/* ── Hero Banner ── */}
       <div className="relative h-52 overflow-hidden"
         style={{ background:'linear-gradient(135deg,#0a2e16 0%,#1a5c2a 60%,#2d7a3a 100%)' }}>
-        <img src="/images/delivery.png" alt="hero" className="absolute inset-0 w-full h-full object-cover opacity-40 scale-105"/>
+        <img src="/images/delivery.webp" alt="hero" className="absolute inset-0 w-full h-full object-cover opacity-40 scale-105"/>
         <div className="absolute inset-0 bg-gradient-to-r from-[#0a2e16]/80 to-transparent"/>
         <div className="relative z-10 flex flex-col justify-center h-full px-8">
           <h1 className="text-3xl font-extrabold text-white leading-tight">Manage Orders<br/>Seamlessly</h1>
@@ -1636,7 +1637,7 @@ export default function Dashboard({ onLogout }) {
     switch(page) {
       case 'dashboard':  return <DashboardOverview/>
       case 'orders':     return <OrdersPage/>
-      case 'shipments':  return <ShipmentsPage/>
+      case 'shipments':  return <WorkflowShipmentsPage/>
       case 'farmers':    return <FarmersPage/>
       case 'products':   return <ProductsPage/>
       case 'warehouses': return <WarehousesPage/>
