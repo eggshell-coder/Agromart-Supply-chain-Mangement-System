@@ -48,8 +48,7 @@ function OrderCreateModal({ onClose }) {
 
   const submit = async () => {
     setError('')
-    const farmerId = String(form.farmer_id || '').trim()
-    if (!farmerId) return setError('Farmer is required.')
+    if (!form.farmer_id) return setError('Farmer is required.')
     if (!form.ordered_at) return setError('Order date is required.')
     if (!form.items.length) return setError('Add at least one product.')
     if (form.items.some(item => !item.product_id || Number(item.quantity) <= 0 || Number(item.agreed_price_per_unit) <= 0)) return setError('Each product needs a product, quantity greater than 0, and agreed price greater than 0.')
