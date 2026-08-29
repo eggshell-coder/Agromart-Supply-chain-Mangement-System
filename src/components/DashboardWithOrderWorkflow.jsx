@@ -26,12 +26,7 @@ function OrderCreateModal({ onClose }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({
-    farmer_id: '',
-    ordered_at: new Date().toISOString().slice(0, 16),
-    notes: '',
-    items: [emptyItem()]
-  })
+  const [form, setForm] = useState({ farmer_id: '', ordered_at: new Date().toISOString().slice(0, 16), notes: '', items: [emptyItem()] })
 
   useEffect(() => {
     let mounted = true
@@ -66,11 +61,9 @@ function OrderCreateModal({ onClose }) {
     if (!form.farmer_id) return setError('Farmer is required.')
     if (!form.ordered_at) return setError('Order date is required.')
     if (!form.items.length) return setError('Add at least one product.')
-
-    const invalid = form.items.some(item =>
-      !item.product_id || Number(item.quantity) <= 0 || Number(item.agreed_price_per_unit) <= 0
-    )
-    if (invalid) return setError('Each product needs a product, quantity greater than 0, and agreed price greater than 0.')
+    if (form.items.some(item => !item.product_id || Number(item.quantity) <= 0 || Number(item.agreed_price_per_unit) <= 0)) {
+      return setError('Each product needs a product, quantity greater than 0, and agreed price greater than 0.')
+    }
 
     setSaving(true)
     try {
@@ -98,111 +91,83 @@ function OrderCreateModal({ onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[300] p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose(false) }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+      <div data-order-create-modal="true" className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white z-10">
-          <div>
-            <h2 className="font-bold text-xl text-gray-900">New Order</h2>
-            <p className="text-xs text-gray-500 mt-1">Select the farmer and add the products being purchased.</p>
-          </div>
+          <div><h2 className="font-bold text-xl text-gray-900">New Order</h2><p className="text-xs text-gray-500 mt-1">Select the farmer and add the products being purchased.</p></div>
           <button onClick={() => onClose(false)} className="text-gray-500 hover:text-gray-800 text-2xl leading-none font-bold">×</button>
         </div>
-
         <div className="p-6 space-y-5">
           {error && <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm px-4 py-3">{error}</div>}
-
-          {loading ? (
-            <div className="py-12 text-center text-sm text-gray-500">Loading farmers and products…</div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Farmer <span className="text-red-500">*</span></label>
-                  <select value={form.farmer_id} onChange={e => setForm(f => ({ ...f, farmer_id: e.target.value }))} className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100">
-                    <option value="">— Select farmer —</option>
-                    {farmers.map(f => <option key={f.farmer_id} value={f.farmer_id}>{f.name} — {f.district?.name || 'District'}{f.phone ? ` — ${f.phone}` : ''}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Order Date <span className="text-red-500">*</span></label>
-                  <input type="datetime-local" value={form.ordered_at} onChange={e => setForm(f => ({ ...f, ordered_at: e.target.value }))} className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100" />
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
-                  <div>
-                    <p className="text-sm font-bold text-gray-900">Order Items <span className="text-red-500">*</span></p>
-                    <p className="text-xs text-gray-500">The agreed total is calculated from these line items.</p>
-                  </div>
-                  <button type="button" onClick={addItem} className="px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 text-xs font-bold">+ Add Product</button>
-                </div>
-
-                <div className="p-4 space-y-3">
-                  {form.items.map((item, index) => {
-                    const product = products.find(p => p.product_id === item.product_id)
-                    const lineTotal = Number(item.quantity || 0) * Number(item.agreed_price_per_unit || 0)
-                    return (
-                      <div key={index} className="grid grid-cols-12 gap-3 items-end p-3 rounded-xl bg-gray-50/60 border border-gray-100">
-                        <div className="col-span-12 md:col-span-5">
-                          <label className="block text-xs font-semibold text-gray-600 mb-1">Product <span className="text-red-500">*</span></label>
-                          <select value={item.product_id} onChange={e => setItem(index, 'product_id', e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-green-500">
-                            <option value="">— Select product —</option>
-                            {products.map(p => <option key={p.product_id} value={p.product_id}>{p.name} — {p.unit || 'KG'}</option>)}
-                          </select>
-                          {product && <p className="text-[11px] text-gray-500 mt-1">Current price: ৳{Number(product.current_price || 0).toLocaleString()} / {product.unit || 'unit'}</p>}
-                        </div>
-                        <div className="col-span-5 md:col-span-2">
-                          <label className="block text-xs font-semibold text-gray-600 mb-1">Quantity <span className="text-red-500">*</span></label>
-                          <input type="number" min="0.01" step="0.01" value={item.quantity} onChange={e => setItem(index, 'quantity', e.target.value)} placeholder="Qty" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-green-500" />
-                        </div>
-                        <div className="col-span-5 md:col-span-3">
-                          <label className="block text-xs font-semibold text-gray-600 mb-1">Agreed Price / Unit (৳) <span className="text-red-500">*</span></label>
-                          <input type="number" min="0.01" step="0.01" value={item.agreed_price_per_unit} onChange={e => setItem(index, 'agreed_price_per_unit', e.target.value)} placeholder="Price" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-green-500" />
-                        </div>
-                        <div className="col-span-2 md:col-span-2 flex items-center justify-between gap-2 pb-1">
-                          <div className="text-right min-w-0">
-                            <p className="text-[10px] text-gray-500">Line Total</p>
-                            <p className="text-sm font-bold text-green-700">৳{Math.round(lineTotal).toLocaleString()}</p>
-                          </div>
-                          {form.items.length > 1 && <button type="button" onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700 text-xl font-black">×</button>}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
+          {loading ? <div className="py-12 text-center text-sm text-gray-500">Loading farmers and products…</div> : <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Notes (optional)</label>
-                <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Optional notes for this order" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-500" />
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Farmer <span className="text-red-500">*</span></label>
+                <select value={form.farmer_id} onChange={e => setForm(f => ({ ...f, farmer_id: e.target.value }))} className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100">
+                  <option value="">— Select farmer —</option>
+                  {farmers.map(f => <option key={f.farmer_id} value={f.farmer_id}>{f.name} — {f.district?.name || 'District'}{f.phone ? ` — ${f.phone}` : ''}</option>)}
+                </select>
               </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Order Date <span className="text-red-500">*</span></label>
+                <input type="datetime-local" value={form.ordered_at} onChange={e => setForm(f => ({ ...f, ordered_at: e.target.value }))} className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100" />
+              </div>
+            </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-                <button onClick={() => onClose(false)} className="px-4 py-2.5 text-sm rounded-xl border border-gray-200 hover:bg-gray-50 font-semibold">Cancel</button>
-                <button disabled={saving || loading} onClick={submit} className="px-5 py-2.5 text-sm rounded-xl bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold shadow-sm">
-                  {saving ? 'Creating…' : 'Create Order'}
-                </button>
+            <div className="rounded-2xl border border-gray-200 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
+                <div><p className="text-sm font-bold text-gray-900">Order Items <span className="text-red-500">*</span></p><p className="text-xs text-gray-500">The agreed total is calculated from these line items.</p></div>
+                <button type="button" onClick={addItem} className="px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 text-xs font-bold">+ Add Product</button>
               </div>
-            </>
-          )}
+              <div className="p-4 space-y-3">
+                {form.items.map((item, index) => {
+                  const product = products.find(p => p.product_id === item.product_id)
+                  const lineTotal = Number(item.quantity || 0) * Number(item.agreed_price_per_unit || 0)
+                  return <div key={index} className="grid grid-cols-12 gap-3 items-end p-3 rounded-xl bg-gray-50/60 border border-gray-100">
+                    <div className="col-span-12 md:col-span-5">
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Product <span className="text-red-500">*</span></label>
+                      <select value={item.product_id} onChange={e => setItem(index, 'product_id', e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-green-500">
+                        <option value="">— Select product —</option>
+                        {products.map(p => <option key={p.product_id} value={p.product_id}>{p.name} — {p.unit || 'KG'}</option>)}
+                      </select>
+                      {product && <p className="text-[11px] text-gray-500 mt-1">Current price: ৳{Number(product.current_price || 0).toLocaleString()} / {product.unit || 'unit'}</p>}
+                    </div>
+                    <div className="col-span-5 md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Quantity <span className="text-red-500">*</span></label>
+                      <input type="number" min="0.01" step="0.01" value={item.quantity} onChange={e => setItem(index, 'quantity', e.target.value)} placeholder="Qty" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-green-500" />
+                    </div>
+                    <div className="col-span-5 md:col-span-3">
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Agreed Price / Unit (৳) <span className="text-red-500">*</span></label>
+                      <input type="number" min="0.01" step="0.01" value={item.agreed_price_per_unit} onChange={e => setItem(index, 'agreed_price_per_unit', e.target.value)} placeholder="Price" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-green-500" />
+                    </div>
+                    <div className="col-span-2 md:col-span-2 flex items-center justify-between gap-2 pb-1">
+                      <div className="text-right min-w-0"><p className="text-[10px] text-gray-500">Line Total</p><p className="text-sm font-bold text-green-700">৳{Math.round(lineTotal).toLocaleString()}</p></div>
+                      {form.items.length > 1 && <button type="button" onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700 text-xl font-black">×</button>}
+                    </div>
+                  </div>
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Notes (optional)</label>
+              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Optional notes for this order" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-500" />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button onClick={() => onClose(false)} className="px-4 py-2.5 text-sm rounded-xl border border-gray-200 hover:bg-gray-50 font-semibold">Cancel</button>
+              <button disabled={saving || loading} onClick={submit} className="px-5 py-2.5 text-sm rounded-xl bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold shadow-sm">{saving ? 'Creating…' : 'Create Order'}</button>
+            </div>
+          </>}
         </div>
       </div>
     </div>
   )
 }
 
-// This wrapper keeps the existing dashboard design and intercepts its legacy
-// "Create Order" button so the live workflow uses the real purchase-order model.
 export default function DashboardWithOrderWorkflow(props) {
   const [open, setOpen] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
-
-  useEffect(() => {
-    // Dashboard owns its own data loading. Reloading it after creation ensures
-    // the new order appears immediately without changing the existing page design.
-  }, [refreshKey])
-
   const handleCapture = e => {
+    if (e.target?.closest?.('[data-order-create-modal]')) return
     const button = e.target?.closest?.('button')
     if (!button) return
     const text = (button.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase()
@@ -212,21 +177,9 @@ export default function DashboardWithOrderWorkflow(props) {
       setOpen(true)
     }
   }
-
   const close = created => {
     setOpen(false)
-    if (created) {
-      setRefreshKey(k => k + 1)
-      // A full dashboard remount is unnecessary; the modal closes and the
-      // existing page can be refreshed through the normal browser reload path.
-      window.location.reload()
-    }
+    if (created) window.location.reload()
   }
-
-  return (
-    <div onClickCapture={handleCapture}>
-      <Dashboard key={refreshKey} {...props} />
-      {open && <OrderCreateModal onClose={close} />}
-    </div>
-  )
+  return <div onClickCapture={handleCapture}><Dashboard {...props} />{open && <OrderCreateModal onClose={close} />}</div>
 }
