@@ -54,7 +54,7 @@ function OrderCreateModal({ onClose }) {
     if (form.items.some(item => !item.product_id || Number(item.quantity) <= 0 || Number(item.agreed_price_per_unit) <= 0)) return setError('Each product needs a product, quantity greater than 0, and agreed price greater than 0.')
     setSaving(true)
     try {
-      await api('/api/orders', { method: 'POST', body: { order_status: 'PLACED', ordered_at: new Date(form.ordered_at).toISOString(), notes: form.notes.trim() || '', items: form.items.map(item => ({ product_id: item.product_id, farmer_id: farmerId, quantity: Number(item.quantity), agreed_price_per_unit: Number(item.agreed_price_per_unit) })) } })
+      await api('/api/orders', { method: 'POST', body: { order_status: 'PLACED', ordered_at: new Date(form.ordered_at).toISOString(), notes: form.notes.trim() || '', items: form.items.map(item => ({ product_id: item.product_id, farmer_id: Number(form.farmer_id), quantity: Number(item.quantity), agreed_price_per_unit: Number(item.agreed_price_per_unit) })) } })
       onClose(true)
     } catch (e) { setError(e.message) } finally { setSaving(false) }
   }
