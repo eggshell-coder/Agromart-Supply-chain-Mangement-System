@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import Onboarding from './components/Onboarding'
 import Login from './components/Login'
-import Dashboard from './components/Dashboard'
+import Dashboard from './components/DashboardWithOrderWorkflow'
 import AdminConsole from './components/AdminConsole'
 import { createClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://qhkckodhjvnuoablpfwq.supabase.co'
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_566VpDhmAdFAWvayfT7fIw_XvWswQXW'
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_566VpDhmAdFAWvayT7fIw_XvWswQXW'
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
 
 function installApiAuthInterceptor() {
