@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Dashboard from './Dashboard'
 
 async function api(path, opts = {}) {
@@ -21,6 +21,7 @@ async function api(path, opts = {}) {
 const emptyItem = () => ({ product_id: '', quantity: '', agreed_price_per_unit: '' })
 
 function OrderCreateModal({ onClose }) {
+  const farmerSelectRef = useRef(null)
   const [farmers, setFarmers] = useState([])
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -33,8 +34,13 @@ function OrderCreateModal({ onClose }) {
     Promise.all([api('/api/farmers'), api('/api/products')])
       .then(([f, p]) => {
         if (!mounted) return
-        setFarmers(Array.isArray(f) ? f.filter(x => x.is_active) : [])
-        setProducts(Array.isArray(p) ? p.filter(x => x.is_active) : [])
+        const activeFarmers = Array.isArray(f) ? f.filter(x => x.is_active && x.farmer_id) : []
+        const activeProducts = Array.isArray(p) ? p.filter(x => x.is_active && x.product_id) : []
+        setFarmers(activeFarmers)
+        setProducts(activeProducts)
+        if (activeFarmers.length) {
+          setForm(current => ({ ...current, farmer_id: String(activeFarmers[0].farmer_id) }))
+        }
       })
       .catch(e => setError(e.message))
       .finally(() => mounted && setLoading(false))
@@ -46,7 +52,7 @@ function OrderCreateModal({ onClose }) {
       const items = [...current.items]
       items[index] = { ...items[index], [key]: value }
       if (key === 'product_id') {
-        const product = products.find(p => p.product_id === value)
+        const product = products.find(p => String(p.product_id) === String(value))
         items[index].agreed_price_per_unit = product?.current_price ?? ''
       }
       return { ...current, items }
@@ -58,7 +64,8 @@ function OrderCreateModal({ onClose }) {
 
   const submit = async () => {
     setError('')
-    if (!form.farmer_id) return setError('Farmer is required.')
+    const farmerId = String(form.farmer_id || farmerSelectRef.current?.value || '').trim()
+    if (!farmerId) return setError('Farmer is required.')
     if (!form.ordered_at) return setError('Order date is required.')
     if (!form.items.length) return setError('Add at least one product.')
     if (form.items.some(item => !item.product_id || Number(item.quantity) <= 0 || Number(item.agreed_price_per_unit) <= 0)) {
@@ -75,7 +82,7 @@ function OrderCreateModal({ onClose }) {
           notes: form.notes.trim() || '',
           items: form.items.map(item => ({
             product_id: item.product_id,
-            farmer_id: form.farmer_id,
+            farmer_id: farmerId,
             quantity: Number(item.quantity),
             agreed_price_per_unit: Number(item.agreed_price_per_unit)
           }))
@@ -94,7 +101,7 @@ function OrderCreateModal({ onClose }) {
       <div data-order-create-modal="true" className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white z-10">
           <div><h2 className="font-bold text-xl text-gray-900">New Order</h2><p className="text-xs text-gray-500 mt-1">Select the farmer and add the products being purchased.</p></div>
-          <button onClick={() => onClose(false)} className="text-gray-500 hover:text-gray-800 text-2xl leading-none font-bold">×</button>
+          <button type="button" onClick={() => onClose(false)} className="text-gray-500 hover:text-gray-800 text-2xl leading-none font-bold">×</button>
         </div>
         <div className="p-6 space-y-5">
           {error && <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm px-4 py-3">{error}</div>}
@@ -102,9 +109,9 @@ function OrderCreateModal({ onClose }) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Farmer <span className="text-red-500">*</span></label>
-                <select value={form.farmer_id} onChange={e => setForm(f => ({ ...f, farmer_id: e.target.value }))} className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100">
+                <select ref={farmerSelectRef} value={form.farmer_id} onChange={e => setForm(f => ({ ...f, farmer_id: String(e.target.value) }))} className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100">
                   <option value="">— Select farmer —</option>
-                  {farmers.map(f => <option key={f.farmer_id} value={f.farmer_id}>{f.name} — {f.district?.name || 'District'}{f.phone ? ` — ${f.phone}` : ''}</option>)}
+                  {farmers.map(f => <option key={f.farmer_id} value={String(f.farmer_id)}>{f.name} — {f.district?.name || 'District'}{f.phone ? ` — ${f.phone}` : ''}</option>)}
                 </select>
               </div>
               <div>
@@ -120,14 +127,14 @@ function OrderCreateModal({ onClose }) {
               </div>
               <div className="p-4 space-y-3">
                 {form.items.map((item, index) => {
-                  const product = products.find(p => p.product_id === item.product_id)
+                  const product = products.find(p => String(p.product_id) === String(item.product_id))
                   const lineTotal = Number(item.quantity || 0) * Number(item.agreed_price_per_unit || 0)
                   return <div key={index} className="grid grid-cols-12 gap-3 items-end p-3 rounded-xl bg-gray-50/60 border border-gray-100">
                     <div className="col-span-12 md:col-span-5">
                       <label className="block text-xs font-semibold text-gray-600 mb-1">Product <span className="text-red-500">*</span></label>
                       <select value={item.product_id} onChange={e => setItem(index, 'product_id', e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-green-500">
                         <option value="">— Select product —</option>
-                        {products.map(p => <option key={p.product_id} value={p.product_id}>{p.name} — {p.unit || 'KG'}</option>)}
+                        {products.map(p => <option key={p.product_id} value={String(p.product_id)}>{p.name} — {p.unit || 'KG'}</option>)}
                       </select>
                       {product && <p className="text-[11px] text-gray-500 mt-1">Current price: ৳{Number(product.current_price || 0).toLocaleString()} / {product.unit || 'unit'}</p>}
                     </div>
@@ -154,8 +161,8 @@ function OrderCreateModal({ onClose }) {
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-              <button onClick={() => onClose(false)} className="px-4 py-2.5 text-sm rounded-xl border border-gray-200 hover:bg-gray-50 font-semibold">Cancel</button>
-              <button disabled={saving || loading} onClick={submit} className="px-5 py-2.5 text-sm rounded-xl bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold shadow-sm">{saving ? 'Creating…' : 'Create Order'}</button>
+              <button type="button" onClick={() => onClose(false)} className="px-4 py-2.5 text-sm rounded-xl border border-gray-200 hover:bg-gray-50 font-semibold">Cancel</button>
+              <button type="button" disabled={saving || loading} onClick={submit} className="px-5 py-2.5 text-sm rounded-xl bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold shadow-sm">{saving ? 'Creating…' : 'Create Order'}</button>
             </div>
           </>}
         </div>
