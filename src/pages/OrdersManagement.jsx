@@ -33,9 +33,31 @@ export default function OrdersManagement() {
     return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide ${className}`}>{status}</span>;
   };
 
-  return (
-    <div>
-      {/* SideNavBar */}
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <span className="text-body-md text-on-surface-variant">Loading orders...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <span className="text-body-md text-error">Error: {error}</span>
+      </div>
+    );
+  }
+
+    if (!orders || orders.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <span className="text-body-md text-on-surface-variant">No orders found.</span>
+      </div>
+    );
+  }
+    return (
+      <div>
       <aside className="fixed left-0 top-0 h-full w-[280px] flex flex-col p-md overflow-y-auto bg-surface-container-low dark:bg-surface-dim border-r border-outline-variant dark:border-outline z-50">
         <div className="flex items-center gap-sm mb-lg px-md">
           <span className="material-symbols-outlined text-headline-md font-headline-md font-bold text-primary dark:text-primary-fixed" style={{fontVariationSettings: '"FILL" 1'}}>agriculture</span>
