@@ -1,4 +1,4 @@
-﻿export async function api(path, opts = {}) {
+export async function api(path, opts = {}) {
   const token = sessionStorage.getItem('agromart_token')
   const res = await fetch(path, {
     ...opts,
