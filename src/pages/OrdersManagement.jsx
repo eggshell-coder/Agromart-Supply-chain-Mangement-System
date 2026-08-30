@@ -162,44 +162,35 @@ export default function OrdersManagement() {
             </div>
             {/* Table */}
             <div className="overflow-x-auto">
-                    <td className="px-md py-2">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide bg-surface-variant text-on-surface-variant">PLACED</span>
-                    </td>
-                    <td className="px-md py-2 text-right">
-                      <button className="text-secondary hover:text-primary transition-colors text-xs font-semibold mr-3">VIEW</button>
-                      <button className="text-on-surface-variant hover:text-primary transition-colors text-xs font-semibold">EDIT</button>
-                    </td>
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-surface-container-low">
+                  <tr>
+                    <th className="px-md py-3 text-label-sm font-bold text-on-surface uppercase">Order ID</th>
+                    <th className="px-md py-3 text-label-sm font-bold text-on-surface uppercase">Supplier</th>
+                    <th className="px-md py-3 text-label-sm font-bold text-on-surface uppercase">Product</th>
+                    <th className="px-md py-3 text-label-sm font-bold text-on-surface uppercase text-right">Quantity</th>
+                    <th className="px-md py-3 text-label-sm font-bold text-on-surface uppercase text-right">Value</th>
+                    <th className="px-md py-3 text-label-sm font-bold text-on-surface uppercase">Date</th>
+                    <th className="px-md py-3 text-label-sm font-bold text-on-surface uppercase">Status</th>
+                    <th className="px-md py-3"></th>
                   </tr>
-                  <tr className="hover:bg-surface-container-lowest/50 transition-colors h-10">
-                    <td className="px-md py-2 font-mono-md text-mono-md">#ORD-9023C</td>
-                    <td className="px-md py-2">Midwest Grains Ltd.</td>
-                    <td className="px-md py-2 text-on-surface-variant">Soybeans (Grade A)</td>
-                    <td className="px-md py-2 text-right font-mono-md">5,000 MT</td>
-                    <td className="px-md py-2 text-right font-mono-md">$85,000</td>
-                    <td className="px-md py-2 text-on-surface-variant">2023-10-21</td>
-                    <td className="px-md py-2">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide bg-primary/20 text-primary-container">DELIVERED</span>
-                    </td>
-                    <td className="px-md py-2 text-right">
-                      <button className="text-secondary hover:text-primary transition-colors text-xs font-semibold mr-3">VIEW</button>
-                      <button className="text-on-surface-variant hover:text-primary transition-colors text-xs font-semibold">EDIT</button>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-surface-container-lowest/50 transition-colors h-10">
-                    <td className="px-md py-2 font-mono-md text-mono-md">#ORD-9024D</td>
-                    <td className="px-md py-2">Highland Dairy</td>
-                    <td className="px-md py-2 text-on-surface-variant">Raw Milk (Tanker)</td>
-                    <td className="px-md py-2 text-right font-mono-md">2,500 Gal</td>
-                    <td className="px-md py-2 text-right font-mono-md">$4,100</td>
-                    <td className="px-md py-2 text-on-surface-variant">2023-10-20</td>
-                    <td className="px-md py-2">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide bg-error-container text-on-error-container">CANCELLED</span>
-                    </td>
-                    <td className="px-md py-2 text-right">
-                      <button className="text-secondary hover:text-primary transition-colors text-xs font-semibold mr-3">VIEW</button>
-                      <button className="text-on-surface-variant hover:text-primary transition-colors text-xs font-semibold">EDIT</button>
-                    </td>
-                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant">
+                  {orders.map((order) => (
+                    <tr key={order.id} className="hover:bg-surface-container-lowest/50 transition-colors h-10">
+                      <td className="px-md py-2 font-mono-md text-mono-md">{order.id}</td>
+                      <td className="px-md py-2">{order.supplier}</td>
+                      <td className="px-md py-2 text-on-surface-variant">{order.product}</td>
+                      <td className="px-md py-2 text-right font-mono-md">{order.quantity}</td>
+                      <td className="px-md py-2 text-right font-mono-md">{order.value}</td>
+                      <td className="px-md py-2 text-on-surface-variant">{order.date}</td>
+                      <td className="px-md py-2">{renderStatus(order.status)}</td>
+                      <td className="px-md py-2 text-right">
+                        <button className="text-secondary hover:text-primary transition-colors text-xs font-semibold mr-3">VIEW</button>
+                        <button className="text-on-surface-variant hover:text-primary transition-colors text-xs font-semibold">EDIT</button>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
