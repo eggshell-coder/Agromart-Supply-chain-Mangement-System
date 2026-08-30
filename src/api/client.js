@@ -1,17 +1,8 @@
 // src/api/client.js
-// Browser-safe API client: same-origin in production, Vite proxy in development.
-import { createClient } from '@supabase/supabase-js'
+// Same-origin API in production; Vite proxies /api to the gateway in local development.
+import { supabase } from '../lib/supabase.js'
 
 const BASE_URL = import.meta.env.VITE_API_URL || ''
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-const supabase = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    })
-  : null
 
 function getAuthHeaders() {
   const token = localStorage.getItem('token')
@@ -40,16 +31,13 @@ async function request(path, options = {}) {
   return response.json()
 }
 
-// Authentication is performed directly against Supabase Auth.
-// This avoids sending login requests to a protected API gateway before a token exists.
+// Login directly with Supabase Auth. The API gateway requires a valid
+// bearer token for /api/*, so attempting to POST /api/login before a token
+// exists can never work reliably.
 export async function login(email, password) {
-  if (!supabase) {
-    throw new Error('Supabase frontend configuration is missing')
-  }
-
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) throw new Error(error.message)
-  if (!data?.session?.access_token) throw new Error('Authentication succeeded but no session token was returned')
+  if (!data?.session?.access_token) throw new Error('No authentication session was returned')
 
   const result = {
     token: data.session.access_token,
