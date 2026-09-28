@@ -28,6 +28,11 @@ function rateLimit(req, res, next) {
   next()
 }
 
+function isAdminRead(method, pathname) {
+  if (method !== 'GET') return false
+  return /^\/api\/(debug|auth\/providers|farmers|warehouses|vehicles|orders|monitoring|spoilage|provenance|price-audit|dashboard|product-requests|products\/[^/]+\/history|weather-cache)(\/|$)/.test(pathname)
+}
+
 function isAdminMutation(method, pathname) {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return false
   return /^\/api\/(farmers|products|warehouses|vehicles|shipments|weather-events|spoilage|monitoring|product-requests|notifications)(\/|$)/.test(pathname)
@@ -162,7 +167,7 @@ gateway.use(async (req, res, next) => {
     if (isSuperadminRoute(req.method, req.path) && auth.profile.role !== 'superadmin') {
       return res.status(403).json({ error: 'Super administrator permission required' })
     }
-    if (isAdminMutation(req.method, req.path) && !['admin', 'superadmin'].includes(auth.profile.role)) {
+    if ((isAdminRead(req.method, req.path) || isAdminMutation(req.method, req.path)) && !['admin', 'superadmin'].includes(auth.profile.role)) {
       return res.status(403).json({ error: 'Administrator permission required' })
     }
     if (isAdminRoute(req.method, req.path) && !['admin', 'superadmin'].includes(auth.profile.role)) {
