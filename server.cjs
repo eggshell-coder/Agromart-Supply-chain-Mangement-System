@@ -13,9 +13,13 @@ if (!globalThis.fetch) {
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+if (allowedOrigins.length) app.use(cors({ origin: allowedOrigins }));
+else app.use(cors({ origin: false }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
 // ── Page Routes First ─────────────────────────────────────────
 // localhost:3000 => login page
@@ -50,7 +54,7 @@ const supabase = createClient(
 function send(res, data, error) {
   if (error) {
     console.error("[DB Error]", error.message);
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: 'Request could not be completed' });
   }
   res.json(data);
 }
@@ -1711,4 +1715,5 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ AgroMart http://localhost:${PORT}`));
+const HOST = process.env.HOST || '127.0.0.1';
+app.listen(PORT, HOST, () => console.log(`✅ AgroMart http://${HOST}:${PORT}`));
