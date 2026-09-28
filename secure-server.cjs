@@ -176,6 +176,10 @@ gateway.use(async (req, res, next) => {
     if (!isAdminMutation(req.method, req.path) && !isUserMutation(req.method, req.path) && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && auth.profile.role === 'user') {
       return res.status(403).json({ error: 'Administrator permission required' })
     }
+    if (auth.profile.role === 'user' && req.method === 'POST' && req.path === '/api/orders' && req.body && typeof req.body === 'object') {
+      req.body.order_status = 'PLACED'
+      req.body.ordered_at = new Date().toISOString()
+    }
     req.agromartAuth = auth
     res.on('finish', () => writeAudit(req, auth, res.statusCode))
     next()
