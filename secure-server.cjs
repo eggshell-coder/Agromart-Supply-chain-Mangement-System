@@ -10,6 +10,34 @@ const INTERNAL_PORT = Number(process.env.INTERNAL_PORT || 3001)
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://qhkckodhjvnuoablpfwq.supabase.co'
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SECRET_KEY
+const TRUSTED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
+const RATE_WINDOW_MS = 60 * 1000
+const RATE_MAX = 120
+const rateBuckets = new Map()
+
+function rateLimit(req, res, next) {
+  const key = req.ip || req.socket.remoteAddress || 'unknown'
+  const now = Date.now()
+  const bucket = rateBuckets.get(key)
+  if (!bucket || now - bucket.startedAt >= RATE_WINDOW_MS) {
+    rateBuckets.set(key, { startedAt: now, count: 1 })
+    return next()
+  }
+  bucket.count += 1
+  if (bucket.count > RATE_MAX) return res.status(429).json({ error: 'Too many requests' })
+  next()
+}
+
+function isAdminMutation(method, pathname) {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return false
+  return /^\/api\/(farmers|products|warehouses|vehicles|shipments|weather-events|spoilage|monitoring|product-requests|notifications)(\/|$)/.test(pathname)
+}
+
+function isUserMutation(method, pathname) {
+  if (method === 'POST' && /^\/api\/(orders|product-requests|monitoring|weather-events)(\/|$)/.test(pathname)) return true
+  if (method === 'POST' && /^\/api\/notifications\/[^/]+\/read$/.test(pathname)) return true
+  return false
+}
 
 if (!SUPABASE_ANON_KEY) {
   console.error('Missing SUPABASE_ANON_KEY/VITE_SUPABASE_ANON_KEY')
@@ -63,11 +91,13 @@ async function authenticate(req) {
 
 function sanitizeBody(body) {
   if (!body || typeof body !== 'object') return null
-  const copy = JSON.parse(JSON.stringify(body))
-  for (const key of ['password', 'newPassword', 'access_token', 'refresh_token', 'SUPABASE_SERVICE_KEY', 'SUPABASE_SECRET_KEY']) {
-    if (key in copy) copy[key] = '[REDACTED]'
+  const sensitive = /password|token|secret|authorization|api[_-]?key|cookie|session/i
+  const redact = value => {
+    if (Array.isArray(value)) return value.map(redact)
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(Object.entries(value).map(([key, val]) => [key, sensitive.test(key) ? '[REDACTED]' : redact(val)]))
   }
-  return copy
+  return redact(body)
 }
 
 function entityFromPath(pathname) {
@@ -100,6 +130,23 @@ async function writeAudit(req, auth, statusCode) {
 
 const gateway = express()
 gateway.disable('x-powered-by')
+gateway.set('trust proxy', 1)
+gateway.use(rateLimit)
+gateway.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  if (TRUSTED_ORIGINS.length && req.headers.origin && TRUSTED_ORIGINS.includes(req.headers.origin)) res.setHeader('Access-Control-Allow-Origin', req.headers.origin)
+  if (req.method === 'OPTIONS') {
+    if (req.headers.origin && !TRUSTED_ORIGINS.includes(req.headers.origin)) return res.status(403).end()
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
+    return res.status(204).end()
+  }
+  next()
+})
 gateway.use(express.json({ limit: '1mb' }))
 gateway.use(express.urlencoded({ extended: true }))
 
@@ -115,7 +162,13 @@ gateway.use(async (req, res, next) => {
     if (isSuperadminRoute(req.method, req.path) && auth.profile.role !== 'superadmin') {
       return res.status(403).json({ error: 'Super administrator permission required' })
     }
+    if (isAdminMutation(req.method, req.path) && !['admin', 'superadmin'].includes(auth.profile.role)) {
+      return res.status(403).json({ error: 'Administrator permission required' })
+    }
     if (isAdminRoute(req.method, req.path) && !['admin', 'superadmin'].includes(auth.profile.role)) {
+      return res.status(403).json({ error: 'Administrator permission required' })
+    }
+    if (!isAdminMutation(req.method, req.path) && !isUserMutation(req.method, req.path) && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && auth.profile.role === 'user') {
       return res.status(403).json({ error: 'Administrator permission required' })
     }
     req.agromartAuth = auth
@@ -148,6 +201,7 @@ gateway.get('/api/admin/staff', async (req, res) => {
 })
 
 gateway.patch('/api/admin/staff/:id', async (req, res) => {
+  if (req.agromartAuth.profile.role !== 'superadmin') return res.status(403).json({ error: 'Super administrator permission required' })
   const role = req.body?.role
   if (!['pending', 'user', 'admin', 'superadmin'].includes(role)) return res.status(400).json({ error: 'Invalid role' })
   const { data, error } = await req.agromartAuth.userClient
