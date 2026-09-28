@@ -1,20 +1,14 @@
 import { useState, useEffect } from 'react'
-import { createClient } from '@supabase/supabase-js'
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://qhkckodhjvnuoablpfwq.supabase.co'
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_566VpDhmAdFAWvayT7fIw_XvWswQXW'
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
+import { supabase } from '../lib/supabase.js'
 
 async function api(path, opts = {}) {
-  const token = sessionStorage.getItem('agromart_token')
-  const r = await fetch(path, {
-    ...opts,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  })
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(opts.headers || {}) }
+  const r = await fetch(path, { ...opts, headers, body: opts.body ? JSON.stringify(opts.body) : undefined })
   const ct = r.headers.get('content-type') || ''
   const data = ct.includes('application/json') ? await r.json() : {}
-  if (!r.ok) throw new Error(data.error || r.statusText || 'Request failed')
+  if (!r.ok) throw new Error(data.error || 'Request failed')
   return data
 }
 
@@ -27,79 +21,30 @@ function UserManagement() {
 
   const load = async () => {
     setLoading(true)
-    const { data, error: err } = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
-    if (err) setError(err.message)
-    else setProfiles(data || [])
-    setLoading(false)
+    try {
+      const data = await api('/api/admin/staff')
+      setProfiles(data || [])
+      setError('')
+    } catch (err) { setError(err.message) }
+    finally { setLoading(false) }
   }
 
   useEffect(() => { load() }, [])
 
   const setRole = async (id, role) => {
     setUpdating(id)
-    const { error: err } = await supabase.from('profiles').update({ role }).eq('id', id)
-    if (err) alert(err.message)
-    else await load()
-    setUpdating(null)
+    try {
+      await api('/api/admin/staff/' + id, { method: 'PATCH', body: { role } })
+      await load()
+    } catch (err) { alert(err.message) }
+    finally { setUpdating(null) }
   }
-
-  if (loading) return <div className="p-6 text-sm text-gray-500">Loading users…</div>
-  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>
-
-  return (
-    <div className="p-6 space-y-4">
-      <h2 className="text-xl font-bold text-green-950">User Management</h2>
-      <div className="overflow-x-auto rounded-2xl border border-gray-200">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {['Email', 'Role', 'Actions'].map(h => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {profiles.map(p => (
-              <tr key={p.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 text-gray-700">{p.email || p.id}</td>
-                <td className="px-4 py-3">
-                  <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
-                    p.role === 'admin' ? 'bg-red-100 text-red-800' :
-                    p.role === 'user' ? 'bg-green-100 text-green-800' :
-                    'bg-yellow-100 text-yellow-800'
-                  }`}>{p.role || 'pending'}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    {['pending', 'user', 'admin'].map(r => (
-                      <button
-                        key={r}
-                        type="button"
-                        disabled={p.role === r || updating === p.id}
-                        onClick={() => setRole(p.id, r)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 ${
-                          p.role === r ? 'bg-gray-100 text-gray-500 cursor-default' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-700'
-                        }`}
-                      >
-                        {r}
-                      </button>
-                    ))}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
 
 // ─── Admin Console ────────────────────────────────────────────────────────────
 export default function AdminConsole({ role }) {
   const [open, setOpen] = useState(false)
 
-  if (role !== 'admin') return null
+  if (!['admin', 'superadmin'].includes(role)) return null
 
   return (
     <>
