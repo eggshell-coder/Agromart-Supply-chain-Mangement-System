@@ -12,7 +12,7 @@ export const AuthContext = createContext({
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
-  const [token, setToken] = useState(localStorage.getItem('token') || null)
+  const [token, setToken] = useState(null)
 
   useEffect(() => {
     let mounted = true
@@ -25,8 +25,6 @@ export const AuthProvider = ({ children }) => {
       const sessionUser = data?.session?.user || null
       setToken(sessionToken)
       setUser(sessionUser)
-      if (sessionToken) localStorage.setItem('token', sessionToken)
-      else localStorage.removeItem('token')
     }
 
     restoreSession()
@@ -36,8 +34,6 @@ export const AuthProvider = ({ children }) => {
       const nextToken = session?.access_token || null
       setToken(nextToken)
       setUser(session?.user || null)
-      if (nextToken) localStorage.setItem('token', nextToken)
-      else localStorage.removeItem('token')
     })
 
     return () => {
@@ -57,7 +53,6 @@ export const AuthProvider = ({ children }) => {
     await supabase.auth.signOut()
     setUser(null)
     setToken(null)
-    localStorage.removeItem('token')
   }
 
   return (
